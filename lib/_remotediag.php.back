@@ -1,0 +1,264 @@
+<?php
+/**
+ * Remote diagnostics page
+ *
+ * @mail support@s-production.online
+ * @link s-production.online
+ */
+
+namespace SProduction\Integration;
+
+use SProduction\Integration\ProfilesTable,
+	Bitrix\Main\Localization\Loc;
+
+class RemoteDiag
+{
+	const MODULE_ID = 'sproduction.integration';
+
+	public static function getMainInfo() {
+		$result = [];
+		// Engine info
+		$info = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO'),
+			'list' => [],
+		];
+		$info['list'][] = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_VERSION'),
+			'value' => self::formatValue(SM_VERSION),
+		];
+		$info['list'][] = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_CHARSET'),
+			'value' => self::formatValue(SITE_CHARSET),
+		];
+		$module_info = \SProdIntegration::getModuleInfo();
+		$info['list'][] = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_MODVERS'),
+			'value' => self::formatValue($module_info['version']),
+		];
+		$incl_res = \Bitrix\Main\Loader::includeSharewareModule('sproduction.integration');
+		$demo_modes = [
+			\Bitrix\Main\Loader::MODULE_NOT_FOUND => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_MODE_1'),
+			\Bitrix\Main\Loader::MODULE_INSTALLED => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_MODE_2'),
+			\Bitrix\Main\Loader::MODULE_DEMO => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_MODE_3'),
+			\Bitrix\Main\Loader::MODULE_DEMO_EXPIRED => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_MODE_4')
+		];
+		$info['list'][] = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_MODE'),
+			'value' => self::formatValue($demo_modes[$incl_res]),
+		];
+		$module_const = 'sproduction_integration_OLDSITEEXPIREDATE';
+		$expire_date_f = '';
+		if (defined($module_const)) {
+			$expire_info = getdate(constant($module_const));
+			$expire_ts = gmmktime($expire_info['hours'], $expire_info['minutes'], $expire_info['seconds'], $expire_info['mon'], $expire_info['mday'], $expire_info['year']);
+			$expire_date = date('d.m.Y H:i:s', $expire_ts);
+			$expire_date_f = self::formatValue($expire_date);
+		}
+		$info['list'][] = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_EXPIRE_DEMO'),
+			'value' => $expire_date_f,
+		];
+		$module_upd_info = \SProdIntegration::getUpdateInfo();
+		if ($module_upd_info) {
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_INFO_EXPIRE_LICENSE'),
+				'value' => self::formatValue($module_upd_info['DATE_TO']),
+			];
+		}
+		// PHP log
+		$settings = include($_SERVER['DOCUMENT_ROOT'] . '/bitrix/.settings.php');
+		if (isset($settings['exception_handling']['value']['log']['settings']['file'])) {
+			$link = $settings['exception_handling']['value']['log']['settings']['file'];
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_DS_REMOTEDIAG_MAININFO_INFO_PHP_LOG'),
+				'value' => $link,
+			];
+		}
+		$result[] = $info;
+		// Diagnostics
+		$info = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_MAININFO_DIAG'),
+			'list' => [],
+		];
+		$list = CheckState::checkList();
+		if (is_array($list) && !empty($list)) {
+			foreach ($list as $k => $value) {
+				$info['list'][] = [
+					'title' => $k,
+					'value' => $value,
+				];
+			}
+		}
+		$result[] = $info;
+		return $result;
+	}
+
+	public static function getOptions() {
+		$result = [];
+		$info = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_OPTIONS_GENERAL'),
+			'list' => [],
+		];
+		global $DB;
+		$sql_query = "SELECT * FROM `b_option` WHERE `MODULE_ID` = 'sproduction.integration';";
+		$db_res = $DB->Query($sql_query);
+		$excludes = [
+			'~bsm_stop_date',
+		];
+		while ($row = $db_res->Fetch()) {
+			if ($row['NAME'] && !in_array($row['NAME'], $excludes)) {
+				$info['list'][] = [
+					'title' => $row['NAME'],
+					'value' => self::formatValue($row['VALUE'], false),
+				];
+			}
+		}
+		$result[] = $info;
+		return $result;
+	}
+
+	public static function getProfiles() {
+		$result = [];
+		$list = ProfilesTable::getList([
+			'order'  => ['id' => 'asc'],
+		]);
+		foreach ($list as $item) {
+			$info = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_PROFILES_PROFILE') . ' "' . $item['name'] . '"',
+				'list' => [],
+			];
+			foreach ($item as $item_k => $item_value) {
+				$info['list'][] = [
+					'title' => $item_k,
+					'value' => self::formatValue($item_value),
+				];
+			}
+			$result[] = $info;
+		}
+		return $result;
+	}
+
+	public static function getStoreFields() {
+		$result = [];
+		$info = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_STORE_FIELDS_TITLE'),
+			'list' => [],
+		];
+		$info['list'][]     = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_STORE_STATUSES'),
+			'value' => self::formatValue(ProfileInfo::getSiteStatuses([])),
+		];
+		$info['list'][]     = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_STORE_PERSON_TYPES'),
+			'value' => self::formatValue(ProfileInfo::getSitePersonTypes([])),
+		];
+		$info['list'][]     = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_STORE_PROPS'),
+			'value' => self::formatValue(ProfileInfo::getSiteProps([])),
+		];
+		$info['list'][]     = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_STORE_OTHER_PROPS'),
+			'value' => self::formatValue(ProfileInfo::getSiteOtherProps([])),
+		];
+		$info['list'][]     = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_STORE_CONTACT_FIELDS'),
+			'value' => self::formatValue(ProfileInfo::getSiteContactFields([])),
+		];
+		$info['list'][]     = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_STORE_USER_GROUPS'),
+			'value' => self::formatValue(ProfileInfo::getSiteUGroups([])),
+		];
+		$result[] = $info;
+		return $result;
+	}
+
+	public static function getCRMFields() {
+		$result = [];
+		$info = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_FIELDS_TITLE'),
+			'list' => [],
+		];
+		if (CheckState::checkConnection()) {
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_FIELDS'),
+				'value' => self::formatValue(ProfileInfo::getCrmFieldsByRequest([])),
+			];
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_DIRECTIONS'),
+				'value' => self::formatValue(ProfileInfo::getCrmDirections([])),
+			];
+			$category_list = ProfileInfo::getCrmDirections([]);
+			foreach ($category_list as $category_id => $title) {
+				$profile['options']['deal_category'] = $category_id;
+				$info['list'][] = [
+					'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_STAGES', [
+						'#CATEGORY_TITLE#' => $title,
+						'#CATEGORY_ID#'    => $category_id
+					]),
+					'value' => self::formatValue(ProfileInfo::getCrmStages($profile)),
+				];
+			}
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_CONTACT_FIELDS'),
+				'value' => self::formatValue(ProfileInfo::getCrmContactFields([])),
+			];
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_CONTACT_SEARCH_FIELDS'),
+				'value' => self::formatValue(ProfileInfo::getCrmContactSFields([])),
+			];
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_COMPANY_FIELDS'),
+				'value' => self::formatValue(ProfileInfo::getCrmCompanyFields([])),
+			];
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_SOURCES'),
+				'value' => self::formatValue(ProfileInfo::getCrmSources([])),
+			];
+			$info['list'][] = [
+				'title' => Loc::getMessage('SP_CI_REMOTEDIAG_CRM_USERS'),
+				'value' => self::formatValue(ProfileInfo::getCrmUsers([])),
+			];
+		}
+		$result[] = $info;
+		return $result;
+	}
+
+	public static function getHandlers() {
+		$result = [];
+		$info = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_HANDLERS_TITLE'),
+			'list' => [],
+		];
+		$info['list'][] = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_HANDLERS_STORE'),
+			'value' => self::formatValue(StoreHandlers::getList()),
+		];
+		$info['list'][] = [
+			'title' => Loc::getMessage('SP_CI_REMOTEDIAG_HANDLERS_CRM'),
+			'value' => self::formatValue(PortalHandlers::getList()),
+		];
+		$result[] = $info;
+		return $result;
+	}
+
+	public static function getFilelog() {
+		$result = [];
+		$result['active'] = (Settings::get("filelog") == 'Y');
+		$result['link'] = FileLogControl::getLink();
+		$result['info'] = FileLogControl::get();
+		return $result;
+	}
+
+	public static function formatValue($value, $simple=true) {
+		$result = $value;
+		if (!$simple) {
+			$result = @unserialize($result);
+			if ($result === false) {
+				$result = $value;
+			}
+		}
+		$result = print_r($result, true);
+		$result = '<pre>' . $result . '</pre>';
+		return $result;
+	}
+}

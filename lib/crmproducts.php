@@ -1,0 +1,705 @@
+<?php
+/**
+ * Synchronization of products
+ *
+ * @mail support@s-production.online
+ * @link s-production.online
+ */
+
+namespace SProduction\Integration;
+
+\Bitrix\Main\Loader::includeModule("catalog");
+
+use Bitrix\Main,
+	Bitrix\Main\Entity,
+	Bitrix\Main\Type,
+	Bitrix\Main\Localization\Loc;
+
+Loc::loadMessages(__FILE__);
+
+
+class CrmProducts
+{
+	const XML_ID_PREFIX = 'SHOP_PROD_';
+
+	/**
+	 * Products search by XML_ID (or other ID field)
+	 */
+	public static function get($crm_prod_id) {
+		$resp = Rest::execute('crm.product.get', [
+			'id' => $crm_prod_id
+		]);
+		return $resp;
+	}
+
+	/**
+	 * Products search by XML_ID (or other ID field)
+	 */
+	public static function find($store_prod_ids, $crm_field_code, $parent_sect_id=0, $subsections=false) {
+		$crm_prod_res = [];
+		if (!$crm_field_code) {
+			$crm_field_code = Settings::get("products_search_crm_field");
+			\SProdIntegration::Log('(CrmProducts::find) search_crm_field ' . print_r($crm_field_code, true));
+		}
+		$filter = [
+			$crm_field_code => $store_prod_ids
+		];
+		if ($parent_sect_id) {
+			$filter['SECTION_ID'] = (int)$parent_sect_id;
+		}
+		$i = 0;
+		do {
+			if ($i) {
+				usleep(500000);
+			}
+			$crm_prod = Rest::getList('crm.product.list', '', [
+				'order'  => ['id' => 'asc'],
+				'filter' => $filter,
+				'select' => ['*', 'PROPERTY_*'],
+			]);
+			$i++;
+		} while (empty($crm_prod) && $i < 3);
+		foreach ($crm_prod as $product) {
+			$store_prod_id = $product[$crm_field_code];
+			if (is_array($store_prod_id)) {
+				if ($store_prod_id['value']) {
+					$crm_prod_res[$store_prod_id['value']] = $product['ID'];
+				}
+			}
+			elseif ($store_prod_id) {
+				$crm_prod_res[$store_prod_id] = $product['ID'];
+			}
+		}
+		return $crm_prod_res;
+	}
+
+	/**
+	 * Products search by set ID fields
+	 */
+	public static function findNew($store_prod_ids) {
+		$crm_prod_res = [];
+		if (!empty($store_prod_ids)) {
+			$comp_table = self::getSearchFields();
+			foreach ($comp_table as $iblock_id => $search_fld) {
+				if ( ! $iblock_id || ! $search_fld) {
+					continue;
+				}
+				$products = Rest::getList('catalog.product.list', 'products', [
+					'order' => [
+						'id' => 'asc',
+					],
+					'select' => [
+						'id',
+						'iblockId',
+						'name',
+						$search_fld
+					],
+					'filter' => [
+						'active'  => 'Y',
+						'iblockId'  => $iblock_id,
+						'=' . $search_fld => $store_prod_ids,
+					],
+//					'start' => -1
+				]);
+				foreach ($products as $product) {
+					$store_prod_id = $product[$search_fld];
+					if (is_array($product[$search_fld])) {
+						if ($product[$search_fld]['value']) {
+							$store_prod_id = $product[$search_fld]['value'];
+						}
+					} elseif ($store_prod_id) {
+						$store_prod_id = $product[$search_fld];
+					}
+					if (!isset($crm_prod_res[$store_prod_id]) || !$crm_prod_res[$store_prod_id]) {
+						$crm_prod_res[$store_prod_id] = $product['id'];
+					}
+				}
+			}
+		}
+		return $crm_prod_res;
+	}
+
+	/**
+	 * Create new product
+	 */
+	public static function add($store_prod_id, $field_store_prod_id, $fields, $parent_sect_id=0) {
+		$fields[$field_store_prod_id] = $store_prod_id;
+		if ($parent_sect_id) {
+			$fields['SECTION_ID'] = $parent_sect_id;
+		}
+		// Process the event handlers
+		foreach (GetModuleEvents(Integration::MODULE_ID, "OnBeforeCrmProductAdd", true) as $event) {
+			$fields = ExecuteModuleEventEx($event, [$fields, $store_prod_id, $field_store_prod_id]);
+		}
+		// Send data
+		$crm_prod_id = Rest::execute('crm.product.add', [
+			'fields' => $fields,
+		]);
+		// Process the event handlers
+		foreach (GetModuleEvents(Integration::MODULE_ID, "OnAfterCrmProductAdd", true) as $event) {
+			$fields = ExecuteModuleEventEx($event, [$crm_prod_id, $fields]);
+		}
+		return $crm_prod_id;
+	}
+
+	/**
+	 * Update product info
+	 */
+	public static function update($crm_prod_id, $field_store_prod_id, $fields) {
+		$result = false;
+		unset($fields[$field_store_prod_id]);
+		// Process the event handlers
+		foreach (GetModuleEvents(Integration::MODULE_ID, "OnBeforeCrmProductUpdate", true) as $event) {
+			$fields = ExecuteModuleEventEx($event, [$crm_prod_id, $fields]);
+		}
+		if ($crm_prod_id && !empty($fields) && (UpdateLock::isChanged($crm_prod_id, 'product_stoc', $fields, true)
+			|| Settings::get('send_products_anyway') == 'Y')) {
+			$req_list = [];
+			// Patch for product images update
+			if (!empty($fields['PREVIEW_PICTURE']) || !empty($fields['DETAIL_PICTURE'])) {
+				$req_list['remove_pics'] = [
+					'method' => 'crm.product.update',
+					'params' => [
+						'id'     => $crm_prod_id,
+						'fields' => [],
+					]
+				];
+				if (!empty($fields['PREVIEW_PICTURE'])) {
+					$req_list['remove_pics']['params']['fields']['PREVIEW_PICTURE'] = ['remove' => 'Y'];
+				}
+				if (!empty($fields['DETAIL_PICTURE'])) {
+					$req_list['remove_pics']['params']['fields']['DETAIL_PICTURE'] = ['remove' => 'Y'];
+				}
+			}
+			$req_list['update'] = [
+				'method' => 'crm.product.update',
+				'params'=> [
+					'id' => $crm_prod_id,
+					'fields' => $fields,
+				]
+			];
+			$resp = Rest::batch($req_list);
+			$result = $resp['update'];
+			// Process the event handlers
+			foreach (GetModuleEvents(Integration::MODULE_ID, "OnAfterCrmProductUpdate", true) as $event) {
+				ExecuteModuleEventEx($event, [$crm_prod_id, $fields, $result]);
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * Create new section for order
+	 */
+	public static function addSection($order_id, $parent_sect_id=0) {
+		$crm_section_id = Rest::execute('crm.productsection.add', [
+			'fields' => [
+				'NAME' => GetMessage("SP_CI_CRMPRODUCTS_ADD_SECTION_ORDER") . ' ' . $order_id,
+				'XML_ID' => Utilities::convEncForDeal(self::XML_ID_PREFIX . $order_id),
+				'SECTION_ID' => $parent_sect_id,
+			],
+		]);
+		return $crm_section_id;
+	}
+
+	/**
+	 * Find section of order
+	 */
+	public static function findSection($order_id, $parent_sect_id=0) {
+		$result = false;
+		$crm_section_list = Rest::execute('crm.productsection.list', [
+			'filter' => [
+				'XML_ID' => self::XML_ID_PREFIX . $order_id,
+				'SECTION_ID' => $parent_sect_id,
+			],
+		]);
+		if (!empty($crm_section_list)) {
+			$result = $crm_section_list[0];
+		}
+		return $result;
+	}
+
+	/**
+	 * Get sections hierarchy
+	 */
+	public static function getSectHierarchy() {
+		$crm_section_list = Rest::getList('crm.productsection.list', '', []);
+		$list = [];
+		foreach($crm_section_list as $item) {
+			if (!$item['XML_ID'] || strpos($item['XML_ID'], 'SHOP_PROD_') === false) {
+				$list[] = $item;
+			}
+		}
+		$result = self::getSectHierarchyFindSub([], 0, 0, $list);
+		return $result;
+	}
+
+	public static function getSectHierarchyFindSub($result, $section_id, $level, $list) {
+		foreach ($list as $item) {
+			if ($item['SECTION_ID'] == $section_id) {
+				$dots = '';
+				for ($i=0; $i<$level; $i++) {
+					$dots .= '. ';
+				}
+				$name = $item['NAME'];
+				if (!\SProdIntegration::isUtf()) {
+					$name = \Bitrix\Main\Text\Encoding::convertEncoding($name, "UTF-8", "Windows-1251");
+				}
+				$result[] = [
+					'id' => $item['ID'],
+					'name' => $dots . $name,
+				];
+				$result = self::getSectHierarchyFindSub($result, $item['ID'], $level + 1, $list);
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * CRM products fields
+	 */
+	public static function getCRMFields() {
+		$list = [];
+		$fields_list = Rest::execute('crm.product.fields');
+		if (!empty($fields_list)) {
+			$i = 0;
+			foreach ($fields_list as $code => $crm_field) {
+				switch ($code) {
+					// Hidden fields
+					case 'ID':
+//					case 'XML_ID':
+					case 'DATE_CREATE':
+					case 'TIMESTAMP_X':
+					case 'MODIFIED_BY':
+					case 'CREATED_BY':
+					case 'SECTION_ID':
+					case 'CURRENCY_ID':
+					case 'CATALOG_ID':
+						break;
+					// Visible fields
+					default:
+						$name = $crm_field['title'];
+						if (!\SProdIntegration::isUtf()) {
+							$name = \Bitrix\Main\Text\Encoding::convertEncoding($name, "UTF-8", "Windows-1251");
+						}
+						$field = [
+							'id' => $code,
+							'name' => $name,
+							'required' => $crm_field['isRequired'],
+							'multiple' => $crm_field['isMultiple'],
+						];
+						$list[] = $field;
+				}
+				$i ++;
+			}
+		}
+		return $list;
+	}
+
+	/**
+	 * CRM products fields
+	 */
+	public static function getCRMFieldsForID() {
+		$list = [];
+		$fields_list = Rest::execute('crm.product.fields');
+		if (!empty($fields_list)) {
+			$i = 0;
+			foreach ($fields_list as $code => $crm_field) {
+				switch ($code) {
+					// Hidden fields
+//					case 'ID':
+					case 'DATE_CREATE':
+					case 'TIMESTAMP_X':
+					case 'MODIFIED_BY':
+					case 'CREATED_BY':
+					case 'SECTION_ID':
+					case 'PRICE':
+					case 'CATALOG_ID':
+					case 'CURRENCY_ID':
+					case 'DESCRIPTION':
+					case 'DESCRIPTION_TYPE':
+					case 'ACTIVE':
+					case 'SORT':
+					case 'VAT_ID':
+					case 'VAT_INCLUDED':
+					case 'MEASURE':
+					case 'PREVIEW_PICTURE':
+					case 'DETAIL_PICTURE':
+						break;
+					// Visible fields
+					default:
+						if (!$crm_field['isMultiple']) {
+							$name = $crm_field['title'];
+							if (!\SProdIntegration::isUtf()) {
+								$name = \Bitrix\Main\Text\Encoding::convertEncoding($name, "UTF-8", "Windows-1251");
+							}
+							if ($code == 'CODE') {
+								$name = GetMessage("SP_CI_CRMPRODUCTS_STORE_FIELDS_KOD_ELEMENTA");
+							}
+							$field  = [
+								'id'   => $code,
+								'name' => $name,
+							];
+							$list[] = $field;
+						}
+				}
+				$i ++;
+			}
+		}
+		return $list;
+	}
+
+	/**
+	 * CRM products fields
+	 */
+	public static function getCRMFieldsForIDNew($iblock_id) {
+		$list = [];
+		$fields_list = [];
+		if ($iblock_id) {
+			$req_list = [];
+			$req_list[] = [
+				'method' => 'catalog.product.getFieldsByFilter',
+				'params' => [
+					'filter' => [
+						'iblockId'    => $iblock_id,
+						'productType' => 1,
+					],
+				]
+			];
+			$req_list[] = [
+				'method' => 'catalog.product.offer.getFieldsByFilter',
+				'params' => [
+					'filter' => [
+						'iblockId'    => $iblock_id,
+					],
+				]
+			];
+			$resp = Rest::batch($req_list);
+			foreach ($resp as $ptype_fields) {
+				$fields_list = array_merge($fields_list, $ptype_fields['product'] ?? $ptype_fields['offer']);
+			}
+		}
+		if (!empty($fields_list)) {
+			$list['main'] = [
+				'title' => GetMessage("SP_CI_CRMPRODUCTS_STORE_FIELDS_OSNOVNYE_PARAMETRY"),
+			];
+			$list['props'] = [
+				'title' => GetMessage("SP_CI_CRMPRODUCTS_STORE_FIELDS_SVOYSTVA"),
+			];
+			$accept_fields = ['name', 'code', 'xmlId'];
+			foreach ($fields_list as $code => $crm_field) {
+				if ((in_array($code, $accept_fields) || strpos($code, 'property') === 0) && !$crm_field['isMultiple']) {
+					$name = $crm_field['name'];
+					if (!\SProdIntegration::isUtf()) {
+						$name = \Bitrix\Main\Text\Encoding::convertEncoding($name, "UTF-8", "Windows-1251");
+					}
+					if ($code == 'code') {
+						$name = GetMessage("SP_CI_CRMPRODUCTS_STORE_FIELDS_KOD_ELEMENTA");
+					}
+					$field  = [
+						'id'   => $code,
+						'name' => $name,
+					];
+					if (strpos($code, 'property') === 0) {
+						$list['props']['items'][] = $field;
+					}
+					else {
+						$list['main']['items'][] = $field;
+					}
+				}
+			}
+		}
+		return $list;
+	}
+
+	/**
+	 * Get product fields by compare table
+	 */
+	public static function getCRMProductFields($store_prod_id, $fields_info) {
+		$fields = [];
+		$comp_table_full = unserialize(Settings::get("products_comp_table"));
+		// Product data
+		$store_prod = false;
+		$filter = ["ID" => $store_prod_id];
+		$res = \CIBlockElement::GetList(["SORT" => "ASC"], $filter);
+		if ($ob = $res->GetNextElement()) {
+			$store_prod = $ob->GetFields();
+			$iblock_id = $store_prod['IBLOCK_ID'];
+			if ($store_prod['PREVIEW_PICTURE']) {
+				$file                          = \CFile::GetFileArray($store_prod['PREVIEW_PICTURE']);
+				$store_prod['PREVIEW_PICTURE'] = $file['SRC'];
+			}
+			if ($store_prod['DETAIL_PICTURE']) {
+				$file                         = \CFile::GetFileArray($store_prod['DETAIL_PICTURE']);
+				$store_prod['DETAIL_PICTURE'] = $file['SRC'];
+			}
+			$store_prod['DETAIL_PAGE_URL_HTML'] = '';
+			if ($store_prod['DETAIL_PAGE_URL']) {
+				$link = Settings::get("site") . $store_prod['DETAIL_PAGE_URL'];
+				$store_prod['DETAIL_PAGE_URL'] = $link;
+				$store_prod['DETAIL_PAGE_URL_HTML'] = '<a href="' . $link . '" target="_blank">' . $link . '</a>';
+			}
+			// Properties
+			$properties = $ob->GetProperties();
+			foreach ($properties as $property) {
+				$store_prod['properties'][$property['ID']] = $property;
+			}
+			// Prices
+			$res_price = \Bitrix\Catalog\PriceTable::getList([
+				'filter' => ['PRODUCT_ID' => $store_prod_id]
+			]);
+			while ($price = $res_price->fetch()) {
+				$store_prod['prices'][$price['CATALOG_GROUP_ID']] = $price;
+			}
+			// Catalog data
+			$res_catalog = \Bitrix\Catalog\ProductTable::getList(array(
+				'filter' => [
+					'=ID' => $store_prod_id
+				],
+			));
+			if ($catalog_info = $res_catalog->fetch()) {
+				$store_prod['catalog'] = $catalog_info;
+			}
+			// Meta data
+			if ($iblock_id) {
+				$ipropElementValues = new \Bitrix\Iblock\InheritedProperty\ElementValues($iblock_id, $store_prod_id);
+				$store_prod['meta'] = $ipropElementValues->getValues();
+			}
+		}
+		// Product parent data
+		$store_parent_prod = false;
+		$store_parent_prod_info = \CCatalogSKU::GetProductInfo($store_prod_id);
+		if (is_array($store_parent_prod_info) && $store_parent_prod_info['ID']) {
+			$filter = ["ID" => $store_parent_prod_info['ID']];
+			$res = \CIBlockElement::GetList(["SORT" => "ASC"], $filter);
+			if ($ob = $res->GetNextElement()) {
+				$store_parent_prod = $ob->GetFields();
+				if ($store_parent_prod['PREVIEW_PICTURE']) {
+					$file                          = \CFile::GetFileArray($store_parent_prod['PREVIEW_PICTURE']);
+					$store_parent_prod['PREVIEW_PICTURE'] = $file['SRC'];
+				}
+				if ($store_parent_prod['DETAIL_PICTURE']) {
+					$file                         = \CFile::GetFileArray($store_parent_prod['DETAIL_PICTURE']);
+					$store_parent_prod['DETAIL_PICTURE'] = $file['SRC'];
+				}
+				$properties = $ob->GetProperties();
+				foreach ($properties as $property) {
+					$store_parent_prod['properties'][$property['ID']] = $property;
+				}
+			}
+		}
+		// Get compare table for product
+		if ($store_prod) {
+			$price_id = false;
+			$comp_table = (array)$comp_table_full[$iblock_id];
+			foreach ($comp_table as $crm_prod_f_id => $sync_params) {
+				$value_always_array = false;
+				// Get value of store field
+				$store_prod_f_id = $sync_params['value'];
+				$order_value = false;
+				if ($store_prod_f_id) {
+					// Offers
+					if (strpos($store_prod_f_id, 'PARENT_') === false) {
+						// Prices
+						if (strpos($store_prod_f_id, 'PRICE_') !== false) {
+							$price_id = (int) str_replace('PRICE_', '', $store_prod_f_id);
+							if ($store_prod['prices'][$price_id]) {
+								$order_value = $store_prod['prices'][$price_id]['PRICE'];
+							}
+						} // Properties
+						elseif (strpos($store_prod_f_id, 'PROP_') !== false) {
+							$prop_id = (int) str_replace('PROP_', '', $store_prod_f_id);
+							if ($store_prod['properties'][$prop_id]) {
+								if ($store_prod['properties'][$prop_id]['USER_TYPE'] == 'directory') {
+									$value_code = $store_prod['properties'][$prop_id]['VALUE'];
+									$table_name = $store_prod['properties'][$prop_id]['USER_TYPE_SETTINGS']['TABLE_NAME'];
+									$order_value = StoreProducts::getHLValue($table_name, $value_code);
+								}
+								else {
+									$order_value = $store_prod['properties'][$prop_id]['VALUE'];
+								}
+							}
+						} // Catalog data
+						elseif (strpos($store_prod_f_id, 'CATALOG_') !== false) {
+							$field_code = str_replace('CATALOG_', '', $store_prod_f_id);
+							$order_value = $store_prod['catalog'][$field_code];
+						} // Meta data
+						elseif (strpos($store_prod_f_id, 'SEO_') !== false) {
+							$field_code = str_replace('SEO_', '', $store_prod_f_id);
+							$order_value = $store_prod['meta'][$field_code];
+						} // Other fields
+						else {
+							$order_value = $store_prod[$store_prod_f_id] ?? false;
+						}
+					}
+					// Parent products
+					elseif ($store_parent_prod) {
+						// Properties
+						$store_prod_f_id = str_replace('PARENT_', '', $store_prod_f_id);
+						if (strpos($store_prod_f_id, 'PROP_') !== false) {
+							$prop_id = (int) str_replace('PROP_', '', $store_prod_f_id);
+							if ($store_parent_prod['properties'][$prop_id]) {
+								if ($store_parent_prod['properties'][$prop_id]['USER_TYPE'] == 'directory') {
+									$value_code = $store_parent_prod['properties'][$prop_id]['VALUE'];
+									$table_name = $store_parent_prod['properties'][$prop_id]['USER_TYPE_SETTINGS']['TABLE_NAME'];
+									$order_value = StoreProducts::getHLValue($table_name, $value_code);
+								}
+								else {
+									$order_value = $store_parent_prod['properties'][$prop_id]['VALUE'];
+								}
+							}
+						} // Other fields
+						else {
+							$order_value = $store_parent_prod[$store_prod_f_id];
+						}
+					}
+					// Adapt value for crm product field
+					// Temporary value
+					$deal_value = [];
+					$value = !is_array($order_value) ? [$order_value] : $order_value;
+					// File
+					if (isset($fields_info[$crm_prod_f_id]) && ($fields_info[$crm_prod_f_id]['type'] == 'product_file' ||
+						($fields_info[$crm_prod_f_id]['type'] == 'product_property' && $fields_info[$crm_prod_f_id]['propertyType'] == 'F'))) {
+						// Add new values
+						foreach ($value as $path) {
+							if ($path) {
+								$path = $_SERVER['DOCUMENT_ROOT'] . $path;
+								$name = pathinfo($path, PATHINFO_BASENAME);
+								$data = file_get_contents($path);
+								$deal_value_item = [];
+								if ($fields_info[$crm_prod_f_id]['type'] == 'product_file') {
+									$deal_value_item['valueId'] = 0;
+								}
+								$deal_value_item['fileData'] = [
+									$name,
+									base64_encode($data)
+								];
+								$deal_value_item['fileId'] = $path;
+								$deal_value[] = $deal_value_item;
+							}
+						}
+						if ($fields_info[$crm_prod_f_id]['propertyType'] == 'F') {
+							$value_always_array = true;
+						}
+//					// TODO: Delete old values
+//					if ($arRemoteFields[$crm_prod_f_id] && is_array($arRemoteFields[$crm_prod_f_id])) {
+//						foreach ($arRemoteFields[$crm_prod_f_id] as $arRFValue) {
+//							$arNewValue[] = array(
+//								"valueId" => $arRFValue['valueId'],
+//								"value" => array('remove' => 'Y'),
+//							);
+//						}
+//					}
+					}
+					// List
+					elseif (isset($fields_info[$crm_prod_f_id]) &&
+						($fields_info[$crm_prod_f_id]['type'] == 'product_property' && $fields_info[$crm_prod_f_id]['propertyType'] == 'L')) {
+						if ($fields_info[$crm_prod_f_id] && is_array($fields_info[$crm_prod_f_id]['values'])) {
+							foreach ($fields_info[$crm_prod_f_id]['values'] as $f_info_value) {
+								if (in_array($f_info_value['VALUE'], $value)) {
+									$deal_value[] = $f_info_value['ID'];
+								}
+							}
+						}
+					}
+					// Other types
+					else {
+						$deal_value = $value;
+					}
+					// Returned value
+					if (!$value_always_array) {
+						if (count($deal_value) == 1) {
+							$deal_value = $deal_value[0];
+						} elseif (count($deal_value) == 0) {
+							$deal_value = '';
+						}
+					}
+					$fields[$crm_prod_f_id] = Utilities::convEncForDeal($deal_value);
+				}
+			}
+			// Default values
+			if (isset($fields['PRICE']) && $fields['PRICE'] && $price_id) {
+				$fields['CURRENCY_ID'] = $store_prod['prices'][$price_id]['CURRENCY'];
+			}
+			if (isset($fields['SECTION_ID']) && $fields['SECTION_ID'] === false) {
+				unset($fields['SECTION_ID']);
+			}
+		}
+		return $fields;
+	}
+
+	/**
+	 * Get search IDs for searching store products for CRM products
+	 */
+	public static function getStoreSearchIDs($crm_prod_ids) {
+		$store_prod_cmpr = [];
+		// Get product id for search
+		$store_fields = self::getSearchFields();
+		if (!empty($crm_prod_ids)) {
+			$req_list = [];
+			foreach ($crm_prod_ids as $prod_id) {
+				if ($prod_id) {
+					$req_list[$prod_id] = [
+						'method' => 'catalog.product.get',
+						'params' => [
+							'id' => $prod_id
+						],
+					];
+				}
+			}
+			$resp = Rest::batch($req_list);
+			foreach ($resp as $item) {
+				if ($item['product']) {
+					$product = $item['product'];
+					$product_iblock = $product['iblockId'];
+					$search_store_field = $store_fields[$product_iblock];
+					if ($search_store_field && $product[$search_store_field]) {
+						$store_prod_cmpr[$product['id']] = is_array($product[$search_store_field]) ? $product[$search_store_field]['value'] : $product[$search_store_field];
+					}
+				}
+			}
+		}
+		return $store_prod_cmpr;
+	}
+
+	/**
+	 * CRM product IDs by store IDs
+	 */
+	public static function getIDsByStoreIDs($store_prod_ids) {
+		$prods_store_crm_ids = [];
+		$store_prods_crm_search_ids = StoreProducts::getCrmSearchIDs($store_prod_ids);
+		$crm_search_ids = self::findNew(array_values($store_prods_crm_search_ids));
+		foreach ($store_prods_crm_search_ids as $store_prod_id => $crm_search_id) {
+			if (isset($crm_search_ids[$crm_search_id]) && $crm_search_ids[$crm_search_id]) {
+				$prods_store_crm_ids[$store_prod_id] = $crm_search_ids[$crm_search_id];
+			}
+		}
+		return $prods_store_crm_ids;
+	}
+
+	/**
+	 * Params for search products in the CRM products DB
+	 */
+	public static function getSearchFields() {
+		$iblocks = ProfileInfo::getCrmIblockList();
+		$comp_table = [];
+		$saved_table = Settings::get('products_search_crm_fields', true);
+		if ($saved_table) {
+			foreach ($iblocks as $iblock) {
+				$comp_table[$iblock['id']] = isset($saved_table[$iblock['id']]) ? $saved_table[$iblock['id']] : '';
+			}
+		} else {
+			foreach ($iblocks as $iblock) {
+				$comp_table[$iblock['id']] = '';
+			}
+		}
+		return $comp_table;
+	}
+
+	public static function setSearchFields($iblock_id, $field) {
+		$comp_table = self::getSearchFields();
+		$comp_table[$iblock_id] = $field;
+		Settings::save('products_search_crm_fields', $comp_table, true);
+	}
+
+}

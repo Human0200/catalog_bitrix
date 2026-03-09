@@ -1,0 +1,52 @@
+body.custom-fields { padding-bottom: 0; }
+body.custom-fields .card { margin-bottom: 0; }
+.radio label { width: 90%; }
+.checkbox label { width: 90%; }
+
+.sprod-integr-page, .sprod-integr-page .h1, .sprod-integr-page .h2, .sprod-integr-page .h3, .sprod-integr-page .h4,
+.sprod-integr-page h1, .sprod-integr-page h2, .sprod-integr-page h3, .sprod-integr-page h4, .sprod-integr-page h5 {
+    font-family: 'Montserrat', sans-serif;
+}
+
+.sprod-integr-frame { width: 100%; height: 100%; border: none; overflow: auto; }
+.sprod_integr_icon { background: url('images/menu_icon.png') no-repeat center 0; }
+
+.ladda-button[disabled], .ladda-button[disabled]:hover, .ladda-button[data-loading], .ladda-button[data-loading]:hover {
+    background-color: #1abc9c !important;
+    font-size: inherit !important;
+    border-radius: inherit !important;
+}
+
+.custom-control-input:checked~.custom-control-label::before {
+    color: #25b7d8;
+    border-color: #25b7d8;
+    background-color: #25b7d8;
+}
+
+.icon { height: 24px; width: 24px; display: inline-block; vertical-align: top; }
+.icon-bitrix { background: url('images/cms_icon.png') no-repeat center 0; }
+.icon-bitrix24 { background: url('images/crm_icon.png') no-repeat center 0; }
+
+.table-params th { vertical-align: middle; line-height: 24px; }
+.table-params .param { vertical-align: middle; }
+.table-params-status .value { width: 60%; }
+.table-params-props .direct { width: 50px; text-align: center; vertical-align: middle; }
+.table-params-props .value { width: 50%; }
+.params-change-direct { color: #adb5bd; }
+.params-change-direct.enabled { color: #a9e9f8; cursor: pointer; }
+.params-change-direct.enabled:hover { color: #25b7d8; }
+.params-change-direct.active { color: #25b7d8; }
+.params-change-direct.enabled.active:hover { color: #a9e9f8; }
+
+.block-disabled { pointer-events: none; opacity: 0.4; }
+
+.page-item.active .page-link {
+    background-color: #25b7d8 !important;
+    border-color: #25b7d8 !important;
+}
+
+.help-link-icon { cursor: pointer; }
+.help-link-icon:hover { opacity: 0.6; }
+
+.table-params .section { font-weight: bold; }
+.table-params option:disabled { color: #c1c1c1; }

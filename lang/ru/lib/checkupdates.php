@@ -1,0 +1,3 @@
+<?php
+$MESS['SP_CI_CHECKUPDATES_GET_UPDATES'] = 'Для модуля "Гибкая интеграция заказов с Битрикс24" доступно обновление #VERSION_NEW# (текущая версия - #VERSION_CURRENT#). Рекомендуем <a href="/bitrix/admin/update_system_partner.php?tabControl_active_tab=tab2&addmodule=#MODULE_ID#&lang=#LANGUAGE_ID#" target="_blank">установить обновления</a>.';
+$MESS['SP_CI_CHECKUPDATES_BUY_UPDATES'] = 'Для модуля "Гибкая интеграция заказов с Битрикс24" доступно обновление #VERSION_NEW# (текущая версия - #VERSION_CURRENT#). Рекомендуем <a href="http://marketplace.1c-bitrix.ru/tobasket.php?ID=#MODULE_ID#&prolong_period=12" style="margin-left:0;" target="_blank">продлить лицензию</a> и установить обновления.';

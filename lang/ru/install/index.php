@@ -1,6 +1,5 @@
-<?php
-
-$MESS["RODZETA_REDIRECT_MODULE_NAME"] = "Редиректы для SEO";
-$MESS["RODZETA_REDIRECT_MODULE_DESCRIPTION"] = "Данный модуль пригодится при переносе сайта - для сохранения рабочих ссылок от старой версии сайта, для склейки домена с www и без www, для редиректа http на https и других типовых редиректов - без привлечения программиста и редактирования конфигов web-сервера.";
-
-$MESS["RODZETA_REQUIREMENTS_PHP_VERSION"] = "Необходима версия PHP 7 или выше";
+<?
+$MESS["SP_CI_NAME"] = "Гибкая интеграция заказов с Битрикс24";
+$MESS["SP_CI_DESC"] = "Синхронизация заказов вашего интернет-магазина на базе CMS 1С-Битрикс со сделками CRM Битрикс24";
+$MESS["SP_CI_PARTNER_NAME"] = "S-Production";
+$MESS["SP_CI_PARTNER_URI"] = "https://s-production.online";

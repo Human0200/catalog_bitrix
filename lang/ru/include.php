@@ -1,5 +1,39 @@
-<?php
-
-$MESS['RODZETA_REDIRECT_MODULE_NAME'] = 'Редиректы для SEO';
-$MESS['RODZETA_REDIRECT_MENU_ITEM_SETTINGS'] = ' - Настройки';
-$MESS['RODZETA_REDIRECT_MENU_ITEM_REDIRECTS'] = ' - Список';
+<?
+$MESS["SP_CI_MENU_NAME_TITLE"] = "Гибкая интеграция заказов с Битрикс24";
+$MESS["SP_CI_MENU_NAME_TEXT"] = "Интеграция с Битрикс24";
+$MESS["SP_CI_SETTINGS_TITLE"] = "Настройки подключения";
+$MESS["SP_CI_SETTINGS_TEXT"] = "Настройки подключения";
+$MESS["SP_CI_GENERAL_TITLE"] = "Общие настройки синхронизации";
+$MESS["SP_CI_GENERAL_TEXT"] = "Общие настройки синхронизации";
+$MESS["SP_CI_PROFILES_TITLE"] = "Профили заказов";
+$MESS["SP_CI_PROFILES_TEXT"] = "Профили синхронизации заказов";
+$MESS["SP_CI_FBASKET_SECTION_TITLE"] = "Забытые корзины";
+$MESS["SP_CI_FBASKET_SECTION_TEXT"] = "Забытые корзины";
+$MESS["SP_CI_FBASKET_PROFILES_TITLE"] = "Профили забытых корзин";
+$MESS["SP_CI_FBASKET_PROFILES_TEXT"] = "Профили забытых корзин";
+$MESS["SP_CI_FBASKET_SETTINGS_TITLE"] = "Настройки забытых корзин";
+$MESS["SP_CI_FBASKET_SETTINGS_TEXT"] = "Настройки забытых корзин";
+$MESS["SP_CI_STATUS_TITLE"] = "Диагностика";
+$MESS["SP_CI_STATUS_TEXT"] = "Диагностика";
+$MESS["SP_CI_ORDER_EDIT"] = "Правка заказа";
+$MESS["SP_CI_ORDER_CREATE"] = "Создать заказ";
+$MESS["SP_CI_PRODUCTS_EDIT"] = "Добавить товары";
+$MESS["SP_CI_CUSTOMFIELDS_ORDERUSER"] = "Покупатель заказа";
+$MESS["SP_CI_CUSTOMFIELDS_ORDERUSER_DESCR"] = "Изменение покупателя у привязанного к сделке заказа";
+$MESS["SP_CI_FILE_SIZE_FORMAT_B"] = "б";
+$MESS["SP_CI_FILE_SIZE_FORMAT_KB"] = "Кб";
+$MESS["SP_CI_FILE_SIZE_FORMAT_MB"] = "Мб";
+$MESS["SP_CI_FILE_SIZE_FORMAT_GB"] = "Гб";
+$MESS["SP_CI_FILE_SIZE_FORMAT_TB"] = "Тб";
+$MESS["SP_CI_FILE_SIZE_FORMAT_PB"] = "Пб";
+$MESS["SP_CI_ERROR_CURL"] = "На сервере отсутствует библиотека cURL, необходимая для работы модуля";
+$MESS["SP_CI_WARN_MODULE_NOT_FOUND"] = "Модуль не найден";
+$MESS["SP_CI_WARN_MODULE_DEMO"] = "Модуль работает в демо-режиме. <a href=\"https://s-production.online/bitrix-apps/sproduction-integration/#buy-form\" target=\"_blank\">Приобрести</a> модуль.";
+$MESS["SP_CI_WARN_MODULE_DEMO_DAYS"] = "Модуль работает в демо-режиме. До окончания демо-периода <span class=\"text-danger\">#TERM_PHRASE#</span>. Рекомендуем <a href=\"https://s-production.online/bitrix-apps/sproduction-integration/#buy-form\" target=\"_blank\">приобрести</a> модуль.";
+$MESS["SP_CI_WARN_MODULE_DEMO_DAYS_TERM1"] = "остался #DAYS# день";
+$MESS["SP_CI_WARN_MODULE_DEMO_DAYS_TERM2"] = "осталось #DAYS# дня";
+$MESS["SP_CI_WARN_MODULE_DEMO_DAYS_TERM3"] = "осталось #DAYS# дней";
+$MESS["SP_CI_WARN_MODULE_DEMO_EXPIRED"] = "Демо-период истёк. Рекомендуем <a href=\"https://s-production.online/bitrix-apps/sproduction-integration/#buy-form\" target=\"_blank\">приобрести</a> модуль.";
+$MESS['SP_CI_WARN_MODULE_GET_UPDATES'] = 'Для модуля доступно обновление #VERSION_NEW# (текущая версия &mdash; #VERSION_CURRENT#). Рекомендуем <a href="/bitrix/admin/update_system_partner.php?tabControl_active_tab=tab2&addmodule=#MODULE_ID#&lang=#LANGUAGE_ID#" target="_parent">установить обновления</a>.';
+$MESS['SP_CI_WARN_MODULE_BUY_UPDATES'] = 'Для модуля доступно обновление #VERSION_NEW# (текущая версия &mdash; #VERSION_CURRENT#). Рекомендуем <a href="http://marketplace.1c-bitrix.ru/tobasket.php?ID=#MODULE_ID#&prolong_period=12" style="margin-left:0;" target="_parent">продлить лицензию</a> и установить обновления.';
+?>
